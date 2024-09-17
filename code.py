@@ -4,6 +4,10 @@ import heapq
 from collections import deque
 import time
 import tracemalloc
+import csv
+import itertools
+import pandas as pd
+import matplotlib.pyplot as plt
 
 # General Notes:
 # - Update the provided file name (code_<RollNumber>.py) as per the instructions.
@@ -69,7 +73,6 @@ def get_ids_path(adj_matrix, start_node, end_node):
 
 
 def track_performance(func, *args):
-    """Wrapper function to track time and memory usage."""
     tracemalloc.start()
     start_time = time.time()
 
@@ -368,6 +371,86 @@ def bonus_problem(adj_matrix):
 
     return vulnerable_roads
 
+def path_exists(adj_matrix, start, goal):
+    visited = set([start])
+    queue = deque([start])
+    while queue:
+        node = queue.popleft()
+        if node == goal:
+            return True
+        for neighbor in range(len(adj_matrix)):
+            if adj_matrix[node][neighbor] > 0 and neighbor not in visited:
+                visited.add(neighbor)
+                queue.append(neighbor)
+    return False
+
+def format_path(path):
+    if path is None:
+        return "None"
+    return str(path)
+
+def format_value(value):
+    if value is None:
+        return "None"
+    if isinstance(value, float):
+        return f"{value:.6f}"
+    return str(value)
+
+def compare_all_pairs(adj_matrix, csv_writer):
+    all_nodes = list(range(len(adj_matrix)))
+    total_pairs = len(all_nodes) * (len(all_nodes) - 1)  # n * (n-1) for directed pairs
+    processed_pairs = 0
+
+    for start in all_nodes:
+        for goal in all_nodes:
+            if start != goal:  # Exclude self-loops
+                processed_pairs += 1
+                if processed_pairs % 100 == 0:  # Update progress every 100 pairs
+                    print(f"Progress: {processed_pairs}/{total_pairs} pairs processed")
+
+                if not path_exists(adj_matrix, start, goal):
+                    csv_writer.writerow({
+                        'start_node': start,
+                        'goal_node': goal,
+                        'ids_path': "None",
+                        'ids_time': "None",
+                        'ids_memory': "None",
+                        'bbfs_path': "None",
+                        'bbfs_time': "None",
+                        'bbfs_memory': "None"
+                    })
+                    continue
+
+                ids_result, ids_time, ids_memory = track_performance(
+                    get_ids_path, adj_matrix, start, goal
+                )
+
+                bbfs_result, bbfs_time, bbfs_memory = track_performance(
+                    get_bidirectional_search_path, adj_matrix, start, goal
+                )
+
+                csv_writer.writerow({
+                    'start_node': start,
+                    'goal_node': goal,
+                    'ids_path': format_path(ids_result),
+                    'ids_time': format_value(ids_time),
+                    'ids_memory': format_value(ids_memory),
+                    'bbfs_path': format_path(bbfs_result),
+                    'bbfs_time': format_value(bbfs_time),
+                    'bbfs_memory': format_value(bbfs_memory)
+                })
+
+def save_results_to_csv(adj_matrix, filename='path_comparison_results_ids_bbfs.csv'):
+    fieldnames = ['start_node', 'goal_node', 'ids_path', 'ids_time', 'ids_memory',
+                  'bbfs_path', 'bbfs_time', 'bbfs_memory']
+    
+    with open(filename, 'w', newline='') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        
+        print("Starting comparison of all pairs...")
+        compare_all_pairs(adj_matrix, writer)
+        print("Comparison completed and results saved to", filename)
 
 # if __name__ == "__main__":
 #   adj_matrix = np.load('IIIT_Delhi.npy')
@@ -382,6 +465,49 @@ def bonus_problem(adj_matrix):
 #   print(f'A* Path: {get_astar_search_path(adj_matrix,node_attributes,start_node,end_node)}')
 #   print(f'Bidirectional Heuristic Search Path: {get_bidirectional_heuristic_search_path(adj_matrix,node_attributes,start_node,end_node)}')
 #   print(f'Bonus Problem: {bonus_problem(adj_matrix)}')
+
+
+df = pd.read_csv('path_comparison_results_ids_bbfs.csv')
+
+# Convert 'None' strings to actual None values
+df = df.replace('None', None)
+
+# Convert time and memory columns to float
+for col in ['ids_time', 'ids_memory', 'bbfs_time', 'bbfs_memory']:
+    df[col] = pd.to_numeric(df[col], errors='coerce')
+
+# Create the scatter plot
+plt.figure(figsize=(10, 6))
+
+# Plot data for IDS
+ids_data = df[df['ids_time'].notna() & df['ids_memory'].notna()]
+plt.scatter(ids_data['ids_time'], ids_data['ids_memory'], 
+            label='IDS', alpha=0.5, color='blue')
+
+# Plot data for BBFS
+bbfs_data = df[df['bbfs_time'].notna() & df['bbfs_memory'].notna()]
+plt.scatter(bbfs_data['bbfs_time'], bbfs_data['bbfs_memory'], 
+            label='BBFS', alpha=0.5, color='red')
+
+# Set labels and title
+plt.xlabel('Execution Time (seconds)')
+plt.ylabel('Memory Usage (KB)')
+plt.title('Search Algorithm Comparison: Execution Time vs Memory Usage')
+
+# Add legend
+plt.legend()
+
+# Use logarithmic scale if the data spans multiple orders of magnitude
+plt.xscale('log')
+plt.yscale('log')
+
+# Add grid for better readability
+plt.grid(True, which="both", ls="-", alpha=0.2)
+
+# Show the plot
+plt.tight_layout()
+plt.show()
+
 
 if __name__ == "__main__":
     adj_matrix = np.load('IIIT_Delhi.npy')
@@ -410,4 +536,6 @@ if __name__ == "__main__":
     # Run Bonus Problem
     bonus_result, bonus_time, bonus_memory = track_performance(bonus_problem, adj_matrix)
     print(f"Bonus Problem: {bonus_result}\nBonus Problem Execution Time: {bonus_time:.4f}s\nBonus Problem Memory Usage: {bonus_memory:.2f}KB\n")
+    
+    save_results_to_csv(adj_matrix)
 
